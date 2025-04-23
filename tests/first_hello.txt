@@ -1,0 +1,54 @@
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use std::time::Duration;
+
+fn simple_change_color(value:u8) -> Color{
+    Color { r: (value), g: (180), b: (255 - value), a: (255) }
+}
+
+fn main() -> Result<(), String>{
+
+    let screen_widht = 800;
+    let screen_height = 600;
+    
+    let sdl_context = sdl2::init()?; // ? vale solo se Err() di result e' stringa
+    let video_subsystem = sdl_context.video()?;
+    let window = video_subsystem.window("Rust game", screen_widht, screen_height)
+    .position_centered()
+    .build()
+    .unwrap();
+    
+    let mut canvas = window.into_canvas().build().unwrap(); // non ? in quanto Err() non e' stringa
+    
+    canvas.set_draw_color(Color::RGB(100, 80, 210));
+    canvas.clear(); // pulisce lo schermo con il colore specificato in set_draw_color()
+    canvas.present(); // Aggiorna lo schermo
+
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    let mut i = 210;
+    'running: loop{
+        for event in event_pump.poll_iter(){
+            match event{
+                Event::Quit { .. } | // se c'e' evento quit (ovvero pressione tasto X della finestra)
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. }=>{ // oppure se c'e' evento KeyDown con pressione del tasto escape
+                    break 'running; // si fa break
+                }
+
+                _ => {} // tutti gli altri casi non fare niente al momento
+            }
+        }
+
+        // Game loop here 
+        i = (i + 1) % 255;
+        let color_to_draw:Color = simple_change_color(i);
+        
+        canvas.set_draw_color(color_to_draw);
+        canvas.clear();
+
+        canvas.present(); // si aggiorna ad ogni frame il rendering
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+    }
+
+    Ok(())
+}

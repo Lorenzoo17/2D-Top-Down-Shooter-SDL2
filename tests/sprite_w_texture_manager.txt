@@ -1,0 +1,134 @@
+use sdl2::keyboard::Keycode;
+use sdl2::pixels::Color;
+use sdl2::event::Event;
+use sdl2::rect::{Point, Rect};
+use sdl2::render::{TextureCreator, WindowCanvas};
+use sdl2::video::WindowContext;
+use std::path::Path;
+use std::time::Duration;
+use sdl2::ttf::Font;
+
+pub mod texture_manager; // mette texture_manager nel main tree
+
+const SCREEN_WIDTH:u32 = 800;
+const SCREEN_HEIGHT:u32 = 600;
+
+// passo canvas come riferimento mutabile in quanto voglio modificare l'oggetto senza pero consumarlo
+// gli altri li passo come riferimento in quanto non li voglio consumare, ma mi servono per lettura
+fn render(canvas:&mut WindowCanvas, texture_manager:&mut texture_manager::TextureManager<WindowContext>,texture_creator:&TextureCreator<WindowContext>, font:&Font) -> Result<(), String>{
+
+    canvas.set_draw_color(Color::RGB(0, 0, 0)); // sfondo bianco
+    canvas.clear(); // metto l'intero canvas con il colore settato qui su
+
+    // rendering font
+    /* 
+    // si definisce testo da scrivere
+    let text_to_display:String = String::from("Hello Sdl2!");
+    // si crea la superficie su cui scriverlo, la surface e' praticamente un immagine, che in questo caso
+    // viene renderizzata tramite font.render() che ci mette del testo
+    // questa immagine viene poi convertita in texture sotto
+    let surface = font
+    .render(text_to_display.as_str())
+    .blended(Color::RGB(0, 0, 0))
+    .map_err(|error| {
+        error.to_string()
+    })?; // con ? propago l'errore, infatti questa funzione restituisce Result<T, String>
+
+    // si crea la texture dalla superficie (immagine)
+    let texture = texture_creator
+    .create_texture_from_surface(&surface)
+    .map_err(|e| {
+        e.to_string()
+    })?;
+
+    // creo il target come Rect, che specifica la posizione e la grandezza della zona in cui voglio spiaccicare
+    // la texture
+    let target = Rect::new(10 as i32, 10 as i32, 200 as u32, 100 as u32);
+    // faccio canvas.copy() per mettere la scritta nel canvas
+    // (texture da mettere, None = voglio mettere tutta la texture, Dove e quanto grande deve essere)
+    canvas.copy(&texture, None, Some(target))?;
+    */
+    let image_width = 100 as u32;
+    let image_height = 100 as u32;
+
+    let output_width = image_width / 2 as u32;
+    let output_height = image_height / 2 as u32;
+
+    // porzione della texture da copiare, con 100 = 100% quindi prendo l'intera texture
+    let src:Rect = Rect::new(0, 0, image_width, image_height);
+
+    // posizione della texture (al centro dello schermo)
+    let x = (SCREEN_WIDTH / 2) as i32;
+    let y = (SCREEN_HEIGHT / 2) as i32;
+
+    // rappresentano le dimensioni finali della texture, src specifica quanto della texture prendere,
+    // output.. specificano la scala
+    let dst:Rect = Rect::new(x - ((output_width/2) as i32), y - ((output_height/2) as i32), output_width, output_height);
+    
+    // punto attorno al quale ruotare la texture
+    let center:Point = Point::new((output_width/2) as i32, (output_height/2) as i32);
+
+    let texture = texture_manager.load("assets/space_ship.png")?;
+
+    canvas.copy_ex(&texture, src, dst, 0.0, center, false, false)?;
+    
+    canvas.present(); // aggiorna la finestra
+
+    Ok(())
+}
+
+fn main() -> Result<(), String>{
+
+    let screen_widht = SCREEN_WIDTH;
+    let screen_height = SCREEN_HEIGHT;
+    
+    let sdl_context = sdl2::init()?; // ? vale solo se Err() di result e' stringa
+    let video_subsystem = sdl_context.video()?;
+    let window = video_subsystem.window("Rust game", screen_widht, screen_height)
+    .position_centered()
+    .build()
+    .unwrap();
+
+    // creo il canvas per la finestra creata qui su
+    let mut canvas = window.into_canvas().build().expect("Error creating canvas window");
+    // si crea la texture (che puo essere disegnata solo dal canvas che l'ha creata)
+    let texture_creator = canvas.texture_creator();
+
+    // Load images
+    // texture manager mutabile in quanto per fare la load si aggiorna la HashTable, quindi serve ref mut
+    let mut texture_manager = texture_manager::TextureManager::new(&texture_creator);
+    texture_manager.load("assets/space_ship.png").expect("Errore caricamento sprite");
+
+    // FONTS
+    // creo il ttf context. utilizzo map_err() in modo che, se da errore, invece di restituire
+    // Result<ttfContext, Error> restituisco Result<ttfContext, String>, questo permette di convertire
+    // l'errore in stringa facilmente. SI utilizza una funzione lambda, dove "e" rappresenta
+    // il tipo Error e io lo converto direttamente in stringa con e.to_string()
+    // ttf_context e' l'oggetto per gestire i font
+    let ttf_context = sdl2::ttf::init().map_err(|e| {e.to_string()})?;
+    // Path::new() restituisce &Path in quanto serve dimensione nota
+    let font_path:&Path = Path::new("fonts/Roboto_Condensed-Black.ttf");
+    let mut font = ttf_context.load_font(font_path, 128)?;
+    font.set_style(sdl2::ttf::FontStyle::NORMAL);
+    
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    'running: loop{
+        for event in event_pump.poll_iter(){
+            match event{
+                Event::Quit { .. } | // se c'e' evento quit (ovvero pressione tasto X della finestra)
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. }=>{ // oppure se c'e' evento KeyDown con pressione del tasto escape
+                    break 'running; // si fa break
+                }
+
+                _ => {} // tutti gli altri casi non fare niente al momento
+            }
+        }
+
+        // Game loop here
+        render(&mut canvas, &mut texture_manager, &texture_creator, &font)?;
+
+        ::std::thread::sleep(Duration::new(0, 1_000_000_000u32 / 60));
+    }
+
+    Ok(())
+}
