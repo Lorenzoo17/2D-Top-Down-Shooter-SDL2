@@ -57,7 +57,8 @@ impl<'l> Game<'l>{
         
         for event in self.event_pump.poll_iter(){
             self.player.move_player(&event);
-            
+            self.player.player_controller(&event);
+
             match event{
                 Event::Quit {..} |
                 Event::KeyDown { keycode: Some(Keycode::Escape), ..} =>{
@@ -78,14 +79,15 @@ impl<'l> Game<'l>{
         self.canvas.clear(); // si imposta colore scelto
 
         // rendering player
-        self.player.player_entity.draw(self.canvas, self.resource_manager
-            .get_texture("player").unwrap()).expect("Errore renderizzando");
+        self.player.draw(self.canvas, self.resource_manager
+            .get_texture("player").unwrap(), 0).expect("Errore renderizzando");
+
 
         // rendering vari gameobjects
         if self.gameobjects.len() > 0{
             for game_object in self.gameobjects.iter_mut(){
                 game_object.draw(self.canvas, self.resource_manager
-                    .get_texture("default").unwrap()).expect("Errore renderizzando");
+                    .get_texture("default").unwrap(), 0).expect("Errore renderizzando");
             }
         }
 
