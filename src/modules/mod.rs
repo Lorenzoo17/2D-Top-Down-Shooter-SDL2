@@ -9,7 +9,7 @@ pub trait GameObject : Any{
     fn as_any(&mut self) -> &mut dyn Any;
     fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String>; // restituisco area da disegnare sul canvas
     fn get_name(&self) -> &str;
-    fn update(&mut self, deltatime:f32);
+    fn update(&mut self, deltatime:f32, game_utils:&Utils);
 }
 
 // ------------- DEFINIZIONE STRUCTS ed ENUMS -------------
@@ -27,6 +27,30 @@ pub enum PlayerState{
     Interaction=1,
     Shoot=2,
     Reload=3,
+}
+
+pub struct Utils{
+    mouse_position:Point,
+}
+
+impl Utils{
+    pub fn new() -> Self{
+        Utils{
+            mouse_position: Point::new(0, 0),
+        }
+    }
+
+    pub fn utils_manage_events(&mut self, event:&Event) -> (){
+        match event{
+            Event::MouseMotion { x, y, xrel, yrel , ..} =>{
+                self.mouse_position = Point::new(*x, *y); // aggiorno mouse position
+            }
+
+            _ => {
+
+            }
+        }
+    }
 }
 
 pub struct Player{
@@ -54,8 +78,8 @@ impl Player{
             },
             // da spostare in struct utils
             Event::MouseMotion { x, y, xrel, yrel, .. } => {
-                println!("x : {}, y: {}", x, y);
-                println!("x_rel : {}, y_rel: {}", xrel, yrel);
+                //println!("x : {}, y: {}", x, y);
+                //println!("x_rel : {}, y_rel: {}", xrel, yrel);
             }
 
             _ => {
@@ -111,8 +135,10 @@ impl GameObject for Player{
         self.player_entity.get_name()
     }
 
-    fn update(&mut self, deltatime:f32) {
-        self.player_entity.update(deltatime);
+    fn update(&mut self, deltatime:f32, game_utils:&Utils) {
+        self.player_entity.update(deltatime, game_utils);
+
+        println!("ciao {:?}", game_utils.mouse_position);
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -160,6 +186,8 @@ impl Entity{
         self.movement_direction = direction;
     }
 
+    // metodo generico di movimento per tutte le entities. Utilizzare EntittyType per gestire comportamenti diversi in base
+    // alla singola entity
     pub fn move_entity(&mut self) -> FPoint{ // ritorno la posizione qui in modo da dover passare il deltatime solo in Update
         if self.movement_direction != FPoint::new(0.0, 0.0){
             let direction_magnitude = (self.movement_direction.x * self.movement_direction.x 
@@ -256,7 +284,7 @@ impl GameObject for Entity{
         self.entity_name.as_str()
     }
 
-    fn update(&mut self, deltatime:f32){
+    fn update(&mut self, deltatime:f32, game_utils:&Utils){
         let movement = (self.move_entity() - self.position) * deltatime;
         self.position = self.position + movement;
 

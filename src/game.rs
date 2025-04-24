@@ -3,7 +3,7 @@ use sdl2::video::Window;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 
-use crate::modules::{Entity, GameObject, Player, ResourceManager, EntityType};
+use crate::modules::{Entity, GameObject, Player, ResourceManager, EntityType, Utils};
 
 pub struct Game<'l>{
     canvas: &'l mut WindowCanvas,
@@ -11,6 +11,8 @@ pub struct Game<'l>{
     resource_manager: ResourceManager<'l>,
     player: Player,
     gameobjects:Vec<Box<dyn GameObject>>,
+
+    utils:Utils,
 }
 
 impl<'l> Game<'l>{
@@ -38,7 +40,9 @@ impl<'l> Game<'l>{
                 event_pump: event_pump_main,
                 resource_manager: resources,
                 player: player,
-                gameobjects: gameobjects_list}
+                gameobjects: gameobjects_list,
+                utils: Utils::new(),
+            }
         )
     }
 
@@ -58,6 +62,8 @@ impl<'l> Game<'l>{
         for event in self.event_pump.poll_iter(){
             self.player.move_player(&event);
             self.player.player_controller(&event);
+
+            self.utils.utils_manage_events(&event);
 
             match event{
                 Event::Quit {..} |
@@ -96,6 +102,10 @@ impl<'l> Game<'l>{
     }
 
     pub fn update(&mut self, deltatime:f32){
-        self.player.player_entity.update(deltatime);
+        // non posso passare come parametro &game in quanto avrei in contemporanea un riferimento mutabile (&mut self)
+        // e uno immutabile (quello che voglio passare come parametro ad update)
+        self.player.update(deltatime, &self.utils);
+
+        // eseguire l'update di tutti gli altri gameobjects
     }
 }
