@@ -3,7 +3,7 @@ use sdl2::video::Window;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 
-use crate::modules::{Entity, GameObject, Player, ResourceManager, EntityType, Utils};
+use crate::modules::{Camera, Entity, EntityType, GameObject, Player, ResourceManager, Utils};
 
 pub struct Game<'l>{
     canvas: &'l mut WindowCanvas,
@@ -11,6 +11,7 @@ pub struct Game<'l>{
     resource_manager: ResourceManager<'l>,
     player: Player,
     gameobjects:Vec<Box<dyn GameObject>>,
+    main_camera:Camera,
 
     utils:Utils,
 }
@@ -42,6 +43,7 @@ impl<'l> Game<'l>{
                 player: player,
                 gameobjects: gameobjects_list,
                 utils: Utils::new(),
+                main_camera:Camera::new(),
             }
         )
     }
@@ -85,15 +87,16 @@ impl<'l> Game<'l>{
         self.canvas.clear(); // si imposta colore scelto
 
         // rendering player
+        // utilizzo game_utils in modo da portare tutti gli oggetti nel S.R della camera
         self.player.draw(self.canvas, self.resource_manager
-            .get_texture("player").unwrap(), 0).expect("Errore renderizzando");
+            .get_texture("player").unwrap(), 0, &self.utils).expect("Errore renderizzando");
 
 
         // rendering vari gameobjects
         if self.gameobjects.len() > 0{
             for game_object in self.gameobjects.iter_mut(){
                 game_object.draw(self.canvas, self.resource_manager
-                    .get_texture("default").unwrap(), 0).expect("Errore renderizzando");
+                    .get_texture("default").unwrap(), 0, &self.utils).expect("Errore renderizzando");
             }
         }
 
@@ -104,8 +107,19 @@ impl<'l> Game<'l>{
     pub fn update(&mut self, deltatime:f32){
         // non posso passare come parametro &game in quanto avrei in contemporanea un riferimento mutabile (&mut self)
         // e uno immutabile (quello che voglio passare come parametro ad update)
+
+        // SETTAGGIO UTILS
+        self.utils.save_player_position(self.player.player_entity.get_position()); //Salvo in utils la posizione del player
+        self.utils.main_camera_position = self.main_camera.get_main_camera_position(); // salvo in utils la posizione della camera
+        // in modo da poterla usare negli update dei vari gameobjects
+
+        // CAMERA : Spostamento in base a posizione del player
+        self.main_camera.update(deltatime, &self.utils); // qui salbo la posizione della camera
+
+        // UPDATE DEI GAMEOBEJCTS
+
         self.player.update(deltatime, &self.utils);
-        self.utils.save_player_position(self.player.player_entity.get_position());
+
 
         // eseguire l'update di tutti gli altri gameobjects
     }

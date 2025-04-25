@@ -7,7 +7,7 @@ use crate::game::{self, Game};
 // ------------- DEFINIZIONE TRATTI --------------
 pub trait GameObject : Any{
     fn as_any(&mut self) -> &mut dyn Any;
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String>; // restituisco area da disegnare sul canvas
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String>; // restituisco area da disegnare sul canvas
     fn get_name(&self) -> &str;
     fn update(&mut self, deltatime:f32, game_utils:&Utils);
 }
@@ -40,6 +40,10 @@ impl Camera{
             camera_position: FPoint::new(0.0, 0.0),
         }
     }
+
+    pub fn get_main_camera_position(&self) -> FPoint{
+        self.camera_position
+    }
 }
 
 impl GameObject for Camera{
@@ -51,13 +55,14 @@ impl GameObject for Camera{
         "main_camera"
     }
 
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String> {
         // nothing to draw for camera
         Ok(())
     }
 
     fn update(&mut self, deltatime:f32, game_utils:&Utils) {
         // camera segue il player
+        // 400, 300 rappresenta la metà della dimensione della finestra -> MODIFICARE PASSANDO IL CANVAS!!!
         self.camera_position = game_utils.get_player_position() - FPoint::new(400.0, 300.0);
     }
 }
@@ -65,6 +70,7 @@ impl GameObject for Camera{
 pub struct Utils{
     mouse_position:Point,
     player_position:FPoint,
+    pub main_camera_position:FPoint,
 }
 
 impl Utils{
@@ -72,6 +78,7 @@ impl Utils{
         Utils{
             mouse_position: Point::new(0, 0),
             player_position: FPoint::new(0.0, 0.0),
+            main_camera_position: FPoint::new(0.0, 0.0),
         }
     }
 
@@ -94,6 +101,7 @@ impl Utils{
     pub fn get_player_position(&self) -> FPoint{
         self.player_position
     }
+
 }
 
 pub struct Player{
@@ -167,9 +175,9 @@ impl Player{
 
 // Implemento GameObject per player utilizzando le funzioni di player_entity
 impl GameObject for Player{
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String> {
 
-        self.player_entity.draw(canvas, texture, self.player_state as u32)?;
+        self.player_entity.draw(canvas, texture, self.player_state as u32, game_utils)?;
 
         Ok(())
     }
@@ -181,10 +189,16 @@ impl GameObject for Player{
     fn update(&mut self, deltatime:f32, game_utils:&Utils) {
         self.player_entity.update(deltatime, game_utils);
 
-
-        // posizione del mouse relativa alla posizione del player
-        let relative_mouse_position = FPoint::new(game_utils.mouse_position.x as f32, 
-            game_utils.mouse_position.y as f32) - self.player_entity.position;
+        
+        // con il movimento della camera rispetto al player, la posizione del mouse deve essere sommata alla posizione
+        // della camera
+        let mouse_world_position = FPoint::new(
+            game_utils.mouse_position.x as f32 + game_utils.main_camera_position.x,
+            game_utils.mouse_position.y as f32 + game_utils.main_camera_position.y,
+        );
+        
+        // posizione del mouse relativa al player -> (target - player) -> poi uso atan2
+        let relative_mouse_position = mouse_world_position - self.player_entity.position;
         
         // rotazione sempre mediante atan2
         let player_rotation = (relative_mouse_position.y as f64).atan2((relative_mouse_position.x as f64)).to_degrees();
@@ -276,7 +290,7 @@ impl Entity{
 }
 
 impl GameObject for Entity{
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32,game_utils:&Utils) -> Result<(), String> {
         // dimensione del singolo sprite nello spritesheet
         let (frame_width, frame_height) = self.entity_sprite.sprite.size();
 
@@ -290,8 +304,12 @@ impl GameObject for Entity{
 
         // entity parte in posizione (0, 0) che sarebbe in alto a sx. Per farlo partire al centro dello schermo
         // si usa come offset il centro del canvas
-        let entity_screen_position = self.position;
+        // let entity_screen_position = self.position;
         //+ FPoint::new(canvas.output_size()?.0 as f32 /2.0, canvas.output_size()?.1 as f32 /2.0);
+
+        // sposto nel S.R della camera, quindi sottraggo la posizione della camera alla posizione del gameobject
+        // 
+        let entity_screen_position = self.position - game_utils.main_camera_position;
 
         // rappresentazione nello schermo dell'entity
         let screen_rect = FRect::from_center(entity_screen_position,
