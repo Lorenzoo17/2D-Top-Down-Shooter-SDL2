@@ -3,7 +3,7 @@ use std::{any::Any, collections::HashMap};
 use sdl2::{event::Event, image::LoadTexture, pixels::Color, rect::{FPoint, FRect, Point, Rect}, render::{Texture, TextureCreator, WindowCanvas}, video::WindowContext};
 use sdl2::keyboard::Keycode;
 
-use crate::game::Game;
+use crate::game::{self, Game};
 // ------------- DEFINIZIONE TRATTI --------------
 pub trait GameObject : Any{
     fn as_any(&mut self) -> &mut dyn Any;
@@ -14,6 +14,7 @@ pub trait GameObject : Any{
 
 // ------------- DEFINIZIONE STRUCTS ed ENUMS -------------
 
+#[derive(PartialEq, Eq)]
 pub enum EntityType {
     Player,
     Enemy,
@@ -29,14 +30,48 @@ pub enum PlayerState{
     Reload=3,
 }
 
+pub struct Camera{
+    camera_position:FPoint,
+}
+
+impl Camera{
+    pub fn new() -> Self{
+        Camera{
+            camera_position: FPoint::new(0.0, 0.0),
+        }
+    }
+}
+
+impl GameObject for Camera{
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn get_name(&self) -> &str {
+        "main_camera"
+    }
+
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32) -> Result<(), String> {
+        // nothing to draw for camera
+        Ok(())
+    }
+
+    fn update(&mut self, deltatime:f32, game_utils:&Utils) {
+        // camera segue il player
+        self.camera_position = game_utils.get_player_position() - FPoint::new(400.0, 300.0);
+    }
+}
+
 pub struct Utils{
     mouse_position:Point,
+    player_position:FPoint,
 }
 
 impl Utils{
     pub fn new() -> Self{
         Utils{
             mouse_position: Point::new(0, 0),
+            player_position: FPoint::new(0.0, 0.0),
         }
     }
 
@@ -50,6 +85,14 @@ impl Utils{
 
             }
         }
+    }
+
+    pub fn save_player_position(&mut self, player_position:FPoint) -> (){
+        self.player_position = player_position;
+    }
+
+    pub fn get_player_position(&self) -> FPoint{
+        self.player_position
     }
 }
 
@@ -138,7 +181,14 @@ impl GameObject for Player{
     fn update(&mut self, deltatime:f32, game_utils:&Utils) {
         self.player_entity.update(deltatime, game_utils);
 
-        println!("ciao {:?}", game_utils.mouse_position);
+
+        // posizione del mouse relativa alla posizione del player
+        let relative_mouse_position = FPoint::new(game_utils.mouse_position.x as f32, 
+            game_utils.mouse_position.y as f32) - self.player_entity.position;
+        
+        // rotazione sempre mediante atan2
+        let player_rotation = (relative_mouse_position.y as f64).atan2((relative_mouse_position.x as f64)).to_degrees();
+        self.player_entity.rotation = player_rotation;
     }
 
     fn as_any(&mut self) -> &mut dyn Any {
@@ -196,10 +246,12 @@ impl Entity{
             let direction_normalized = if direction_magnitude > 0.0 { self.movement_direction / direction_magnitude}
             else {self.movement_direction}; // normalizza direzione
             
-            // imposto rotazione in base alla direzione (posizione (x,y))
-            // atan2 ritorna angolo a partire dall'asse x dato il punto (x, y)
-            self.rotation = direction_normalized.y.atan2(direction_normalized.x).to_degrees() as f64;
-
+            if self.entity_type != EntityType::Player{ // solo il player non deve ruotare in base alla direzione di spostamento 
+                // imposto rotazione in base alla direzione (posizione (x,y))
+                // atan2 ritorna angolo a partire dall'asse x dato il punto (x, y)
+                self.rotation = direction_normalized.y.atan2(direction_normalized.x).to_degrees() as f64;
+            }
+        
             self.position + direction_normalized * self.speed // ritorno posizione aggiornata (va poi moltiplicato deltatime)
         }else {
             self.position // non si muove
@@ -238,8 +290,8 @@ impl GameObject for Entity{
 
         // entity parte in posizione (0, 0) che sarebbe in alto a sx. Per farlo partire al centro dello schermo
         // si usa come offset il centro del canvas
-        let entity_screen_position = self.position + 
-        FPoint::new(canvas.output_size()?.0 as f32 /2.0, canvas.output_size()?.1 as f32 /2.0);
+        let entity_screen_position = self.position;
+        //+ FPoint::new(canvas.output_size()?.0 as f32 /2.0, canvas.output_size()?.1 as f32 /2.0);
 
         // rappresentazione nello schermo dell'entity
         let screen_rect = FRect::from_center(entity_screen_position,

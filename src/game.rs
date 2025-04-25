@@ -105,6 +105,7 @@ impl<'l> Game<'l>{
         // non posso passare come parametro &game in quanto avrei in contemporanea un riferimento mutabile (&mut self)
         // e uno immutabile (quello che voglio passare come parametro ad update)
         self.player.update(deltatime, &self.utils);
+        self.utils.save_player_position(self.player.player_entity.get_position());
 
         // eseguire l'update di tutti gli altri gameobjects
     }
