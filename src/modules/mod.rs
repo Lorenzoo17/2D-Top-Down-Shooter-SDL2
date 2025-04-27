@@ -1,25 +1,27 @@
 use std::{any::Any, collections::HashMap};
 
-use sdl2::{event::Event, image::LoadTexture, pixels::Color, rect::{FPoint, FRect, Point, Rect}, render::{Texture, TextureCreator, WindowCanvas}, video::WindowContext};
+use sdl2::{event::Event, image::LoadTexture, mouse::MouseButton, pixels::Color, rect::{FPoint, FRect, Point, Rect}, render::{Texture, TextureCreator, WindowCanvas}, video::WindowContext};
 use sdl2::keyboard::Keycode;
 
 use crate::game::{self, Game};
 // ------------- DEFINIZIONE TRATTI --------------
 pub trait GameObject : Any{
     fn as_any(&mut self) -> &mut dyn Any;
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String>; // restituisco area da disegnare sul canvas
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils, scale_factor:f32) -> Result<(), String>; // restituisco area da disegnare sul canvas
     fn get_name(&self) -> &str;
     fn update(&mut self, deltatime:f32, game_utils:&Utils);
 }
 
 // ------------- DEFINIZIONE STRUCTS ed ENUMS -------------
 
-#[derive(PartialEq, Eq)]
+// si implementa tratto copy per evitare di dover mettere il lifetime in bullet quando si passa EntityType
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum EntityType {
     Player,
     Enemy,
     Item,
     Other,
+    Bullet,
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
@@ -28,6 +30,46 @@ pub enum PlayerState{
     Interaction=1,
     Shoot=2,
     Reload=3,
+}
+
+pub struct Bullet{
+    bullet_entity:Entity, // entity relativa al bullet, contiene di base velocita', direzione, nome ecc..
+    bullet_owner: EntityType, // assegnato alla creazione, per capire chi ha sparato il proiettile
+}
+
+impl Bullet{
+    pub fn new(bullet_direction:FPoint, bullet_owner:EntityType, bullet_velocity:f32, bullet_starting_position:FPoint) -> Self{
+        let mut new_bullet = Bullet{
+            bullet_entity: Entity::with_speed("bullet", bullet_velocity, EntityType::Bullet),
+            bullet_owner:bullet_owner
+        };
+
+        new_bullet.bullet_entity.change_direction(bullet_direction); // imposto la direzione al nuovo bullet creato
+        new_bullet.bullet_entity.set_position(bullet_starting_position); // posizione in cui istanziare il bullet
+
+        new_bullet.bullet_entity.set_sprite(100,50); // imposto la dimensione dello sprite (coincide con dimensione missile.png per ora)
+        // la texture poi si specifica quando si renderizza direttamente, quindi in Game.render()
+
+        new_bullet
+    }
+}
+
+impl GameObject for Bullet{
+    fn get_name(&self) -> &str {
+        self.bullet_entity.get_name()
+    }
+
+    fn as_any(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils, scale_factor:f32) -> Result<(), String> {
+        self.bullet_entity.draw(canvas, texture, animation_frame, game_utils, scale_factor)
+    }
+
+    fn update(&mut self, deltatime:f32, game_utils:&Utils) {
+        self.bullet_entity.update(deltatime, game_utils); // ho il movimento gia' gestito di base da Entity
+    }
 }
 
 pub struct Camera{
@@ -55,7 +97,7 @@ impl GameObject for Camera{
         "main_camera"
     }
 
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils, scale_factor:f32) -> Result<(), String> {
         // nothing to draw for camera
         Ok(())
     }
@@ -115,7 +157,7 @@ impl Player{
         player_state:PlayerState::Idle }
     }
 
-    pub fn player_controller(&mut self, event:&Event){
+    pub fn player_controller(&mut self, event:&Event, gameobjects_list:&mut Vec<Box<dyn GameObject>>){
         match event{
             Event::KeyDown { keycode:Some(Keycode::F), .. } =>{
                 //if self.player_state != PlayerState::Interaction{
@@ -127,10 +169,22 @@ impl Player{
                     self.player_state = PlayerState::Idle; // torno in idle se premo F in shoot
                 }
             },
-            // da spostare in struct utils
-            Event::MouseMotion { x, y, xrel, yrel, .. } => {
-                //println!("x : {}, y: {}", x, y);
-                //println!("x_rel : {}, y_rel: {}", xrel, yrel);
+            Event::MouseButtonDown { mouse_btn:MouseButton::Left, .. } => {
+                if self.player_state == PlayerState::Shoot{
+                    
+                    // si crea nuovo bullet
+                    let bullet_velocity = 200.0;
+                    let bullet_direction = self.player_entity.get_forward_direction();
+                    let bullet_starting_position = FPoint::new(self.player_entity.position.x, 
+                        self.player_entity.position.y);
+
+                    let new_bullet = Bullet::new(bullet_direction
+                        , self.player_entity.entity_type, bullet_velocity, self.player_entity.get_position());
+                    
+                    // si mette bullet nella lista dei gameobjects di game
+                    gameobjects_list.push(Box::new(new_bullet)); // si crea una copia nello heap di new_bullet
+                    // alla fine del metodo new_bullet dichiarato qui su viene automaticamente droppato, mentre quello nella gameobjects_list rimane appunto nello heap
+                }
             }
 
             _ => {
@@ -175,9 +229,9 @@ impl Player{
 
 // Implemento GameObject per player utilizzando le funzioni di player_entity
 impl GameObject for Player{
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils, scale_factor:f32) -> Result<(), String> {
 
-        self.player_entity.draw(canvas, texture, self.player_state as u32, game_utils)?;
+        self.player_entity.draw(canvas, texture, self.player_state as u32, game_utils, scale_factor)?;
 
         Ok(())
     }
@@ -260,6 +314,8 @@ impl Entity{
             let direction_normalized = if direction_magnitude > 0.0 { self.movement_direction / direction_magnitude}
             else {self.movement_direction}; // normalizza direzione
             
+            // la rotazione fatta in questo modo funziona in automatico per tutti gli sprite che
+            // puntano verso destra!!!!
             if self.entity_type != EntityType::Player{ // solo il player non deve ruotare in base alla direzione di spostamento 
                 // imposto rotazione in base alla direzione (posizione (x,y))
                 // atan2 ritorna angolo a partire dall'asse x dato il punto (x, y)
@@ -287,10 +343,18 @@ impl Entity{
     pub fn get_position(&self) -> FPoint{
         self.position
     }
+
+    pub fn set_position(&mut self, position:FPoint) -> (){
+        self.position = position;
+    }
+
+    pub fn get_forward_direction(&self) -> FPoint{
+        FPoint::new(self.rotation.to_radians().cos() as f32, self.rotation.to_radians().sin() as f32)
+    }
 }
 
 impl GameObject for Entity{
-    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32,game_utils:&Utils) -> Result<(), String> {
+    fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32,game_utils:&Utils, scale_factor:f32) -> Result<(), String> {
         // dimensione del singolo sprite nello spritesheet
         let (frame_width, frame_height) = self.entity_sprite.sprite.size();
 
@@ -313,8 +377,8 @@ impl GameObject for Entity{
 
         // rappresentazione nello schermo dell'entity
         let screen_rect = FRect::from_center(entity_screen_position,
-            self.entity_sprite.sprite.width() as f32 * 1.0,
-            self.entity_sprite.sprite.height() as f32 * 1.0);
+            self.entity_sprite.sprite.width() as f32 * scale_factor,
+            self.entity_sprite.sprite.height() as f32 * scale_factor);
         
         // converto in intero
         let output_rect = Rect::new(

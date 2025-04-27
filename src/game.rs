@@ -3,7 +3,7 @@ use sdl2::video::Window;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
 
-use crate::modules::{Camera, Entity, EntityType, GameObject, Player, ResourceManager, Utils};
+use crate::modules::{Camera, Entity, EntityType, GameObject, Player, ResourceManager, Utils, Bullet};
 
 pub struct Game<'l>{
     canvas: &'l mut WindowCanvas,
@@ -24,7 +24,8 @@ impl<'l> Game<'l>{
         // qui carico tutte le textures
         resources.load_texture("player", "assets/survivor_sheet.png").expect("Errore caricamento textures");
         resources.load_texture("default", "assets/spritesheet_characters.png").expect("Errore caricamento textures");
-        
+        resources.load_texture("bullet", "assets/missile.png").expect("Errore caricamento texture missile");
+
         let mut player = Player::new("Player", 50.0);
         player.player_entity.set_sprite(51, 43);
 
@@ -63,7 +64,7 @@ impl<'l> Game<'l>{
         
         for event in self.event_pump.poll_iter(){
             self.player.move_player(&event);
-            self.player.player_controller(&event);
+            self.player.player_controller(&event, &mut self.gameobjects);
 
             self.utils.utils_manage_events(&event);
 
@@ -89,14 +90,21 @@ impl<'l> Game<'l>{
         // rendering player
         // utilizzo game_utils in modo da portare tutti gli oggetti nel S.R della camera
         self.player.draw(self.canvas, self.resource_manager
-            .get_texture("player").unwrap(), 0, &self.utils).expect("Errore renderizzando");
+            .get_texture("player").unwrap(), 0, &self.utils, 1.0).expect("Errore renderizzando");
 
 
         // rendering vari gameobjects
         if self.gameobjects.len() > 0{
             for game_object in self.gameobjects.iter_mut(){
-                game_object.draw(self.canvas, self.resource_manager
-                    .get_texture("default").unwrap(), 0, &self.utils).expect("Errore renderizzando");
+                if let Some(bullet) = game_object.as_any().downcast_mut::<Bullet>(){
+                    let bullet_texture_scale_factor = 0.2;
+
+                    bullet.draw(self.canvas, self.resource_manager.get_texture("bullet").unwrap(), 
+                        0, &self.utils, bullet_texture_scale_factor).expect("Errore rendering bullet");
+                }else{
+                    game_object.draw(self.canvas, self.resource_manager
+                        .get_texture("default").unwrap(), 0, &self.utils, 1.0).expect("Errore renderizzando");
+                }
             }
         }
 
@@ -122,5 +130,8 @@ impl<'l> Game<'l>{
 
 
         // eseguire l'update di tutti gli altri gameobjects
+        for game_object in self.gameobjects.iter_mut(){
+            game_object.update(deltatime, &self.utils);
+        }
     }
 }
