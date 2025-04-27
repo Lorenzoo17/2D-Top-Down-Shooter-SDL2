@@ -6,10 +6,12 @@ use sdl2::keyboard::Keycode;
 use crate::game::{self, Game};
 // ------------- DEFINIZIONE TRATTI --------------
 pub trait GameObject : Any{
-    fn as_any(&mut self) -> &mut dyn Any;
+    fn as_any(&self) -> &dyn Any; // se mi serve solo riferimento immutabile (come per retain)
+    fn as_any_mut(&mut self) -> &mut dyn Any;
     fn draw(&mut self, canvas:&mut WindowCanvas, texture:&Texture, animation_frame:u32, game_utils:&Utils, scale_factor:f32) -> Result<(), String>; // restituisco area da disegnare sul canvas
     fn get_name(&self) -> &str;
     fn update(&mut self, deltatime:f32, game_utils:&Utils);
+    fn is_destroyed(&self) -> bool;
 }
 
 // ------------- DEFINIZIONE STRUCTS ed ENUMS -------------
@@ -35,13 +37,19 @@ pub enum PlayerState{
 pub struct Bullet{
     bullet_entity:Entity, // entity relativa al bullet, contiene di base velocita', direzione, nome ecc..
     bullet_owner: EntityType, // assegnato alla creazione, per capire chi ha sparato il proiettile
+    bullet_life:i32, // vita del bullet in base alla distanza percorsa
+    bullet_current_life:i32, // attuale distanza percorsa
+    destroyed:bool, // si imposta a true quando ad esempio colpisce nemico o ostacolo
 }
 
 impl Bullet{
     pub fn new(bullet_direction:FPoint, bullet_owner:EntityType, bullet_velocity:f32, bullet_starting_position:FPoint) -> Self{
         let mut new_bullet = Bullet{
             bullet_entity: Entity::with_speed("bullet", bullet_velocity, EntityType::Bullet),
-            bullet_owner:bullet_owner
+            bullet_owner:bullet_owner,
+            bullet_life:200, // di base 200 pixel
+            bullet_current_life:0,
+            destroyed:false,
         };
 
         new_bullet.bullet_entity.change_direction(bullet_direction); // imposto la direzione al nuovo bullet creato
@@ -52,6 +60,14 @@ impl Bullet{
 
         new_bullet
     }
+
+    pub fn is_out_of_range(&self) -> bool{
+        if self.bullet_current_life >= self.bullet_life{
+            true
+        }else{
+            false
+        }
+    }
 }
 
 impl GameObject for Bullet{
@@ -59,7 +75,11 @@ impl GameObject for Bullet{
         self.bullet_entity.get_name()
     }
 
-    fn as_any(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 
@@ -69,6 +89,12 @@ impl GameObject for Bullet{
 
     fn update(&mut self, deltatime:f32, game_utils:&Utils) {
         self.bullet_entity.update(deltatime, game_utils); // ho il movimento gia' gestito di base da Entity
+
+        self.bullet_current_life += (self.bullet_entity.speed * deltatime) as i32; // aggiorno la distanza percorsa
+    }
+
+    fn is_destroyed(&self) -> bool {
+        self.destroyed || self.is_out_of_range() // per bullet OR tra out_of_range e destroyed
     }
 }
 
@@ -89,7 +115,11 @@ impl Camera{
 }
 
 impl GameObject for Camera{
-    fn as_any(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
 
@@ -106,6 +136,10 @@ impl GameObject for Camera{
         // camera segue il player
         // 400, 300 rappresenta la metà della dimensione della finestra -> MODIFICARE PASSANDO IL CANVAS!!!
         self.camera_position = game_utils.get_player_position() - FPoint::new(400.0, 300.0);
+    }
+
+    fn is_destroyed(&self) -> bool {
+        false
     }
 }
 
@@ -175,11 +209,21 @@ impl Player{
                     // si crea nuovo bullet
                     let bullet_velocity = 200.0;
                     let bullet_direction = self.player_entity.get_forward_direction();
-                    let bullet_starting_position = FPoint::new(self.player_entity.position.x, 
-                        self.player_entity.position.y);
+                    
+                    // per spostare la posizione del bullet rispetto al sistema di riferimento locale del player
+                    // devo ottenere il suo S.R.L 
+                    // ottengo quindi il forward che sarebbe la direzione in cui punta il player
+                    // ottengo l'asse right mediante rotazione di 90 gradi in senso orario
+                    let forward = self.player_entity.get_forward_direction();
+                    let right = self.player_entity.get_right_direction();
+                    let bullet_offset = forward * 20.0 + right * -12.0; // sposto in avanti di 20 pixel e a sinistra di 12
+                    
+                    // quindi parto dal player e sposto il bullet dell'offset, calcolato nel S.R.L del player, quindi
+                    // quando il player si sposta rimane invariato
+                    let bullet_starting_position = self.player_entity.position + bullet_offset;
 
                     let new_bullet = Bullet::new(bullet_direction
-                        , self.player_entity.entity_type, bullet_velocity, self.player_entity.get_position());
+                        , self.player_entity.entity_type, bullet_velocity, bullet_starting_position);
                     
                     // si mette bullet nella lista dei gameobjects di game
                     gameobjects_list.push(Box::new(new_bullet)); // si crea una copia nello heap di new_bullet
@@ -259,8 +303,16 @@ impl GameObject for Player{
         self.player_entity.rotation = player_rotation;
     }
 
-    fn as_any(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn is_destroyed(&self) -> bool {
+        false
     }
 }
 
@@ -351,6 +403,10 @@ impl Entity{
     pub fn get_forward_direction(&self) -> FPoint{
         FPoint::new(self.rotation.to_radians().cos() as f32, self.rotation.to_radians().sin() as f32)
     }
+
+    pub fn get_right_direction(&self) -> FPoint{
+        FPoint::new(self.get_forward_direction().y, -self.get_forward_direction().x)
+    }
 }
 
 impl GameObject for Entity{
@@ -426,8 +482,16 @@ impl GameObject for Entity{
         // .. 
     }
 
-    fn as_any(&mut self) -> &mut dyn Any {
+    fn as_any(&self) -> &dyn Any {
         self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+
+    fn is_destroyed(&self) -> bool {
+        false
     }
 }
 

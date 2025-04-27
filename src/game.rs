@@ -96,7 +96,7 @@ impl<'l> Game<'l>{
         // rendering vari gameobjects
         if self.gameobjects.len() > 0{
             for game_object in self.gameobjects.iter_mut(){
-                if let Some(bullet) = game_object.as_any().downcast_mut::<Bullet>(){
+                if let Some(bullet) = game_object.as_any_mut().downcast_mut::<Bullet>(){
                     let bullet_texture_scale_factor = 0.2;
 
                     bullet.draw(self.canvas, self.resource_manager.get_texture("bullet").unwrap(), 
@@ -133,5 +133,23 @@ impl<'l> Game<'l>{
         for game_object in self.gameobjects.iter_mut(){
             game_object.update(deltatime, &self.utils);
         }
+
+        // questo metodo per rimuovere bullet da Vec non funziona in rust in quanto remove() e' mut ref
+        // quindi non posso avere altri riferimenti (anche se non mutabili) a gameobjects insieme
+        // for (index, game_object) in self.gameobjects.iter_mut().enumerate(){
+        //     if let Some(bullet) = game_object.as_any().downcast_ref::<Bullet>(){
+        //         self.gameobjects.remove(index);
+        //     }
+        // }
+        // quello che posso fare e' usare il metodo retain:
+        self.gameobjects.retain(|game_object| {
+            if let Some(bullet) = game_object.as_any().downcast_ref::<Bullet>(){ // per i gameobject che sono bullet
+                !bullet.is_destroyed() // tieni il bullet solo se NON e' distrutto
+            }else{
+                true // tengo tutti gli altri
+            }
+        });
+
+        println!("{}", self.gameobjects.len());
     }
 }
