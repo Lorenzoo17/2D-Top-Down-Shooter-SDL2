@@ -183,12 +183,23 @@ impl Utils{
 pub struct Player{
     pub player_entity:Entity,
     pub player_state:PlayerState,
+    fire_rate: f32, // rate di sparo dei proiettili
+    current_fire_rate: f32,
 }
 
 impl Player{
     pub fn new(name:&str, _speed:f32) -> Self{
         Player { player_entity: Entity::with_speed(name, _speed, EntityType::Player),
-        player_state:PlayerState::Idle }
+        player_state:PlayerState::Idle,
+        fire_rate: 0.5, // fire rate di base
+        current_fire_rate: 0.0 }
+    }
+
+    pub fn with_fire_rate(name:&str, _speed:f32, initial_fire_rate:f32) -> Self{
+        Player { player_entity: Entity::with_speed(name, _speed, EntityType::Player),
+            player_state:PlayerState::Idle,
+            fire_rate: initial_fire_rate,
+            current_fire_rate: 0.0 }
     }
 
     pub fn player_controller(&mut self, event:&Event, gameobjects_list:&mut Vec<Box<dyn GameObject>>){
@@ -205,6 +216,8 @@ impl Player{
             },
             Event::MouseButtonDown { mouse_btn:MouseButton::Left, .. } => {
                 if self.player_state == PlayerState::Shoot{
+
+                    if self.current_fire_rate <= 0.0{ // solo se posso sparare 
                     
                     // si crea nuovo bullet
                     let bullet_velocity = 200.0;
@@ -228,6 +241,9 @@ impl Player{
                     // si mette bullet nella lista dei gameobjects di game
                     gameobjects_list.push(Box::new(new_bullet)); // si crea una copia nello heap di new_bullet
                     // alla fine del metodo new_bullet dichiarato qui su viene automaticamente droppato, mentre quello nella gameobjects_list rimane appunto nello heap
+                    
+                    self.current_fire_rate = self.fire_rate; // resetto il current_fire_rate 
+                    }
                 }
             }
 
@@ -269,6 +285,14 @@ impl Player{
             }
         }
     }
+
+    pub fn set_fire_rate(&mut self, new_fire_rate:f32){
+        self.fire_rate = new_fire_rate;
+    }
+
+    pub fn get_fire_rate(&self) -> f32{
+        self.fire_rate
+    }
 }
 
 // Implemento GameObject per player utilizzando le funzioni di player_entity
@@ -301,6 +325,10 @@ impl GameObject for Player{
         // rotazione sempre mediante atan2
         let player_rotation = (relative_mouse_position.y as f64).atan2((relative_mouse_position.x as f64)).to_degrees();
         self.player_entity.rotation = player_rotation;
+
+        if self.current_fire_rate > 0.0{
+            self.current_fire_rate -= deltatime;
+        }
     }
 
     fn as_any(&self) -> &dyn Any {
