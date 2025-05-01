@@ -1,9 +1,13 @@
-use sdl2::{image::LoadTexture, keyboard::Keycode, render::{Canvas, TextureCreator, WindowCanvas}, video::WindowContext, EventPump, Sdl};
+use std::path::Path;
+
+use sdl2::{image::LoadTexture, keyboard::Keycode, rect::{FPoint, Point}, render::{Canvas, TextureCreator, WindowCanvas}, video::WindowContext, EventPump, Sdl};
 use sdl2::video::Window;
 use sdl2::event::Event;
 use sdl2::pixels::Color;
+use sdl2::ttf::Font;
 
-use crate::modules::{Camera, Entity, EntityType, GameObject, Player, ResourceManager, Utils, Bullet};
+use crate::modules::{Bullet, Camera, Enemy, Entity, EntityType, GameObject, Player, ResourceManager, Utils, Damageable,
+EnemySpawner};
 
 pub struct Game<'l>{
     canvas: &'l mut WindowCanvas,
@@ -12,6 +16,7 @@ pub struct Game<'l>{
     player: Player,
     gameobjects:Vec<Box<dyn GameObject>>,
     main_camera:Camera,
+    enemy_spawner:EnemySpawner,
 
     utils:Utils,
 }
@@ -26,15 +31,25 @@ impl<'l> Game<'l>{
         resources.load_texture("default", "assets/spritesheet_characters.png").expect("Errore caricamento textures");
         resources.load_texture("bullet", "assets/missile.png").expect("Errore caricamento texture missile");
 
-        let mut player = Player::new("Player", 50.0);
+        let mut player = Player::new("Player", 50.0, 100);
         player.player_entity.set_sprite(51, 43);
 
-        // entity di prova per testare il rendering
-        let mut other:Entity = Entity::new("test_entity", EntityType::Other);
-        other.set_sprite(51, 43);
+        // enemy di prova per testare il rendering
+        let mut base_enemy:Enemy = Enemy::new("Enemy_0", 25.0, 10);
+        base_enemy.enemy_entity.set_sprite(51, 43);
+        base_enemy.enemy_entity.set_position(FPoint::new(40.0, 40.0));
+
+        let mut base_enemy_2:Enemy = Enemy::new("Enemy_1", 25.0, 10);
+        base_enemy_2.enemy_entity.set_sprite(51, 43);
+        base_enemy_2.enemy_entity.set_position(FPoint::new(-80.0, -80.0));
 
         let mut gameobjects_list:Vec<Box<dyn GameObject>> = Vec::new(); // si crea la lista di gameobjects
-        gameobjects_list.push(Box::new(other)); // si crea un puntatore e si MUOVE "other" nello heap (box puntera' a questo). Poi si mette il box nella lista
+        gameobjects_list.push(Box::new(base_enemy)); // si crea un puntatore e si MUOVE "other" nello heap (box puntera' a questo). Poi si mette il box nella lista
+        gameobjects_list.push(Box::new(base_enemy_2));
+
+        let enemy_spawn_rate_range = (4.0, 7.0);
+        let enemy_health_range = (5, 10);
+        let enemy_speed_range = (20.0, 25.0);
 
         Ok(
             Game { 
@@ -45,6 +60,7 @@ impl<'l> Game<'l>{
                 gameobjects: gameobjects_list,
                 utils: Utils::new(),
                 main_camera:Camera::new(),
+                enemy_spawner:EnemySpawner::new(enemy_spawn_rate_range, enemy_health_range, enemy_speed_range),
             }
         )
     }
@@ -108,6 +124,28 @@ impl<'l> Game<'l>{
             }
         }
 
+        // FONTS
+        // creo il ttf context. utilizzo map_err() in modo che, se da errore, invece di restituire
+        // Result<ttfContext, Error> restituisco Result<ttfContext, String>, questo permette di convertire
+        // l'errore in stringa facilmente. SI utilizza una funzione lambda, dove "e" rappresenta
+        // il tipo Error e io lo converto direttamente in stringa con e.to_string()
+        // ttf_context e' l'oggetto per gestire i font
+        let ttf_context = sdl2::ttf::init().map_err(|e| {e.to_string()})?;
+        // Path::new() restituisce &Path in quanto serve dimensione nota
+        let font_path:&Path = Path::new("fonts/Roboto_Condensed-Black.ttf");
+        let mut font = ttf_context.load_font(font_path, 128)?;
+        font.set_style(sdl2::ttf::FontStyle::NORMAL);
+
+        // stampa delle varie cose che devono essere stampate
+        // N.B => Il testo rimane fisso nello schermo in quanto a spostarsi nella direzione opposta della camera
+        // sono solo le entities (vedi impl Gameobject for Entities, qui nell'update si spostano le entities rispetto alla camera)
+
+        // stampa vita player:
+        let player_health_pos = Point::new(10, 10);
+        let player_health_size = Point::new(120, 40);
+        Utils::write_on_screen(format!("health: {}", self.player.get_current_health()).as_str(), self.canvas, &font, &self.resource_manager,
+        player_health_pos, player_health_size)?;
+
         self.canvas.present(); // si renderizza canvas
         Ok(())
     }
@@ -132,6 +170,11 @@ impl<'l> Game<'l>{
         // eseguire l'update di tutti gli altri gameobjects
         for game_object in self.gameobjects.iter_mut(){
             game_object.update(deltatime, &self.utils);
+
+            // nemici che attano player al contatto
+            if let Some(enemy) = game_object.as_any_mut().downcast_mut::<Enemy>(){
+                enemy.damage_player(&mut self.player);
+            }
         }
 
         // questo metodo per rimuovere bullet da Vec non funziona in rust in quanto remove() e' mut ref
@@ -143,13 +186,64 @@ impl<'l> Game<'l>{
         // }
         // quello che posso fare e' usare il metodo retain:
         self.gameobjects.retain(|game_object| {
-            if let Some(bullet) = game_object.as_any().downcast_ref::<Bullet>(){ // per i gameobject che sono bullet
-                !bullet.is_destroyed() // tieni il bullet solo se NON e' distrutto
-            }else{
-                true // tengo tutti gli altri
-            }
+            // tengo solo i gameObject che non sono destroyed
+            !game_object.is_destroyed()
+            // in questo modo vengono droppati dalla lista gameobjects, quindi non eseguono piu' update e rendering! (si dealloca lo spazio)
+
+            // if let Some(bullet) = game_object.as_any().downcast_ref::<Bullet>(){ // per i gameobject che sono bullet
+            //     !bullet.is_destroyed() // tieni il bullet solo se NON e' distrutto
+            // }else{
+            //     true // tengo tutti gli altri
+            // }
         });
 
-        println!("{}", self.gameobjects.len());
+        // println!("{}", self.gameobjects.len());
+
+        // SPAWN ENEMIES
+
+        let new_enemy = self.enemy_spawner.spawn_enemy(deltatime, &self.utils);
+        match new_enemy {
+            Some(new_enemy) => { // se ho effettivamente spawnato enemy, lo metto nella lista
+                self.gameobjects.push(Box::new(new_enemy));
+            },
+            None =>{ // se None non si fa niente (ovvero il tempo sta ancora scorrendo)
+
+            }
+        }
+
+        // COLLISIONE BULLETS
+
+        // per collisione bullet
+        // devo creare due liste separte perche non posso fare due cicli annidati entrambi con borrow mutabile su gameobjects
+        // quindi metto bullet ed enemies in un vec e poi ciclo su questi dopo
+
+        // N.B per ora non sto sfruttando a pieno il metodo generico bullet.damage_enemy!
+        // spostare eventualmente queste liste come metodi generali di Game.rs
+        let mut bullets = vec![];
+        let mut enemies = vec![];
+
+        for obj in self.gameobjects.iter_mut() {
+            // utilizzo il match in modo da evitare di avere due as_any_mut() nello stesso ciclo
+            // questo causa problemi con il borrow checker in quanto avrei 2 riferimenti mutabili &mut dyn Any
+            // in questo modo ne ho solo uno e metto nella lista sulla base della struct che implementa il tratto gameobject
+            match obj.as_any_mut() {
+                any if any.is::<Bullet>() => {
+                    let bullet = any.downcast_mut::<Bullet>().unwrap();
+                    bullets.push(bullet);
+                },
+                any if any.is::<Enemy>() => {
+                    let enemy = any.downcast_mut::<Enemy>().unwrap();
+                    enemies.push(enemy);
+                },
+                _ => {}
+            }
+        }
+
+        for bullet in &mut bullets {
+            for enemy in &mut enemies {
+                bullet.damage_enemy(*enemy);
+            }
+        }
+
     }
 }
