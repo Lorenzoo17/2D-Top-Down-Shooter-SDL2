@@ -47,6 +47,7 @@ pub struct EnemySpawner{
     pub spawn_rate:(f32, f32), // min e max
     pub health_enemies:(i32, i32), // min e max
     pub speed_enemies:(f32, f32), // min e max
+    enemy_id:u32,
 
     current_spawn_rate:f32,
 }
@@ -58,24 +59,53 @@ impl EnemySpawner{
             current_spawn_rate:enemy_spawn_rate.0,
             health_enemies:health_enemies_range,
             speed_enemies:speed_enemies_range,
+            enemy_id:0, // inizialemente a 0 -> ad ogni nemico che viene spawnato si incrementa di 1
         }
     }
 
     pub fn spawn_enemy(&mut self, deltatime:f32, game_utils:&Utils) -> Option<Enemy>{ // movimento dell'enemy
         if self.current_spawn_rate <= 0.0{
-            let mut new_enemy = Enemy::new("enemy_base", 25.0, 10);
+
+            // vita e velocita' casuale tra i due range min e max
+            let enemy_health = rand::thread_rng().gen_range(self.health_enemies.0..self.health_enemies.1);
+            let enemy_speed = rand::thread_rng().gen_range(self.speed_enemies.0..self.speed_enemies.1);
             
+            let mut new_enemy = Enemy::new(format!("enemy_base_{}", self.enemy_id).as_str(), enemy_speed, enemy_health);
+            self.enemy_id += 1; // si incrementa enemy_id
+
             // si imposta sprite
             new_enemy.enemy_entity.set_sprite(51, 43);
             // si imposta posizione (casualizzarla)
-            new_enemy.enemy_entity.set_position(FPoint::new(game_utils.get_player_position().x - 40.0, 
-            game_utils.get_player_position().y + 40.0));
-
-            self.current_spawn_rate = self.spawn_rate.0;
+            let offset_player_x_min = game_utils.get_player_position().x - 100.0;
+            let offset_player_x_max = game_utils.get_player_position().x + 100.0;
+            let offset_player_y_min = game_utils.get_player_position().y - 100.0;
+            let offset_player_y_max = game_utils.get_player_position().y + 100.0;
+            
+            let spawn_position_x = rand::thread_rng().gen_range(offset_player_x_min..offset_player_x_max);
+            let spawn_position_y = rand::thread_rng().gen_range(offset_player_y_min..offset_player_y_max);
+            new_enemy.enemy_entity.set_position(FPoint::new(spawn_position_x, 
+                spawn_position_y));
+            
+            // spawn rate casuale tra minimo e massimo
+            self.current_spawn_rate = rand::thread_rng().gen_range(self.spawn_rate.0..self.spawn_rate.1);
             Some(new_enemy)
         }else{
             self.current_spawn_rate -= deltatime;
             None
+        }
+    }
+
+    pub fn increase_difficulty(&mut self){
+        if self.spawn_rate.0 > 0.5 {
+            self.spawn_rate = (self.spawn_rate.0 - 0.25, self.spawn_rate.1 - 0.25);
+        }
+
+        if self.health_enemies.0 < 40 {
+            self.health_enemies = (self.health_enemies.0 + 5, self.health_enemies.1 + 5);
+        }
+
+        if self.speed_enemies.0 < 70.0 {
+            self.speed_enemies = (self.speed_enemies.0 + 5.0, self.speed_enemies.1 + 5.0);
         }
     }
 }
@@ -205,7 +235,8 @@ impl Bullet{
     // metodo generico in modo da colpire qualsiasi entita' damageable SOLO SE il bullet owner e' diverso dall'entity type
     pub fn damage_enemy<T>(&mut self, enemy:&mut T) where T : Damageable{ // metodo che viene eseguito nell'update di game.rs per ogni bullet
         // se il bullet e' vicino al nemico i-esimo
-        if Utils::calculate_point_distance(self.bullet_entity.get_position(), enemy.get_entity().get_position()) < 5.0{
+        let bullet_range:f32 = 20.0; // vicinanza in pixel tra bullet e nemico per far si che il bullet possa colpirlo
+        if Utils::calculate_point_distance(self.bullet_entity.get_position(), enemy.get_entity().get_position()) < bullet_range{
             if enemy.get_entity().entity_type != self.bullet_owner{
                 enemy.take_damage(self.bullet_damage); // damage fisso
                 println!("{} health : {}", enemy.get_entity().entity_name, enemy.get_current_health()); // stampo la vita rimanente

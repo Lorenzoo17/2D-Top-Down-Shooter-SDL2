@@ -17,6 +17,8 @@ pub struct Game<'l>{
     gameobjects:Vec<Box<dyn GameObject>>,
     main_camera:Camera,
     enemy_spawner:EnemySpawner,
+    game_score:i32,
+    last_score_checkpoint: i32, // nuova variabile per evitare che la difficolta' incrementi quando lo score e' fermo a 50
 
     utils:Utils,
 }
@@ -61,6 +63,8 @@ impl<'l> Game<'l>{
                 utils: Utils::new(),
                 main_camera:Camera::new(),
                 enemy_spawner:EnemySpawner::new(enemy_spawn_rate_range, enemy_health_range, enemy_speed_range),
+                game_score:0,
+                last_score_checkpoint:0,
             }
         )
     }
@@ -146,11 +150,43 @@ impl<'l> Game<'l>{
         Utils::write_on_screen(format!("health: {}", self.player.get_current_health()).as_str(), self.canvas, &font, &self.resource_manager,
         player_health_pos, player_health_size)?;
 
+        // stampa game score
+
+        // prendo width ed height del canvas attuale
+        let score_pos = Point::new((self.canvas.output_size()?.0 - 150) as i32, 10 as i32);
+        let score_size = Point::new(120, 40);
+        Utils::write_on_screen(format!("Score : {}", self.game_score).as_str(), self.canvas, &font, &self.resource_manager, score_pos, score_size)?;
+
+        if self.player.is_destroyed(){
+            let (canvas_width, canvas_height) = self.canvas.output_size()?;
+            let text = "GAME OVER";
+
+            let text_size = Point::new(300, 80);
+            let text_pos = Point::new(
+                (canvas_width / 2) as i32 - (text_size.x / 2),
+                (canvas_height / 2) as i32 - (text_size.y / 2),
+            );
+        
+            Utils::write_on_screen(
+                text,
+                self.canvas,
+                &font,
+                &self.resource_manager,
+                text_pos,
+                text_size,
+            )?;
+        }
+
         self.canvas.present(); // si renderizza canvas
         Ok(())
     }
 
     pub fn update(&mut self, deltatime:f32){
+
+        if self.player.is_destroyed(){
+            return;
+        }
+
         // non posso passare come parametro &game in quanto avrei in contemporanea un riferimento mutabile (&mut self)
         // e uno immutabile (quello che voglio passare come parametro ad update)
 
@@ -186,8 +222,10 @@ impl<'l> Game<'l>{
         // }
         // quello che posso fare e' usare il metodo retain:
         self.gameobjects.retain(|game_object| {
+            // vecchie implementazioni : 
+
             // tengo solo i gameObject che non sono destroyed
-            !game_object.is_destroyed()
+            // !game_object.is_destroyed()
             // in questo modo vengono droppati dalla lista gameobjects, quindi non eseguono piu' update e rendering! (si dealloca lo spazio)
 
             // if let Some(bullet) = game_object.as_any().downcast_ref::<Bullet>(){ // per i gameobject che sono bullet
@@ -195,6 +233,17 @@ impl<'l> Game<'l>{
             // }else{
             //     true // tengo tutti gli altri
             // }
+            
+            // implementazione che incrementa lo score:
+
+            if game_object.is_destroyed(){ // se il gameobject e' destroyed
+                if let Some(enemy) = game_object.as_any().downcast_ref::<Enemy>(){
+                    self.game_score += 10; // se e' un enemy in particolare, prima di rimuoverlo incremento score
+                }
+                false // ritorno false quindi lo tolgo dalla lista
+            }else{
+                true // altrimenti lo tengo nella lista
+            }
         });
 
         // println!("{}", self.gameobjects.len());
@@ -243,6 +292,11 @@ impl<'l> Game<'l>{
             for enemy in &mut enemies {
                 bullet.damage_enemy(*enemy);
             }
+        }
+
+        if self.game_score >= self.last_score_checkpoint + 50 {
+            self.enemy_spawner.increase_difficulty();
+            self.last_score_checkpoint = self.game_score;
         }
 
     }
