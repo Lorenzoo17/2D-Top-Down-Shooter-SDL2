@@ -20,4 +20,4 @@ The codebase adopts a modular architecture and serves as a hands-on project to d
 
 ---
 
-![Gameplay preview](assets/clip.gif)
+![Gameplay preview](./clip.gif)
