@@ -249,13 +249,26 @@ impl<'l> Game<'l>{
         // println!("{}", self.gameobjects.len());
 
         // SPAWN ENEMIES
+        // qui solo uno alla volta
+        // let new_enemy = self.enemy_spawner.spawn_enemy(deltatime, &self.utils);
+        // match new_enemy {
+        //     Some(new_enemy) => { // se ho effettivamente spawnato enemy, lo metto nella lista
+        //         self.gameobjects.push(Box::new(new_enemy));
+        //     },
+        //     None =>{ // se None non si fa niente (ovvero il tempo sta ancora scorrendo)
+// 
+        //     }
+        // }
 
-        let new_enemy = self.enemy_spawner.spawn_enemy(deltatime, &self.utils);
-        match new_enemy {
-            Some(new_enemy) => { // se ho effettivamente spawnato enemy, lo metto nella lista
-                self.gameobjects.push(Box::new(new_enemy));
+        // metodo che permette di spawnare piu' nemici alla volta
+        let new_enemies = self.enemy_spawner.spawn_enemies(deltatime, &self.utils);
+        match new_enemies {
+            Some(new_enemies) => {
+                for enemy in new_enemies{ // voglio che vengano consumati, quindi senza iter
+                    self.gameobjects.push(Box::new(enemy));
+                }
             },
-            None =>{ // se None non si fa niente (ovvero il tempo sta ancora scorrendo)
+            None => {
 
             }
         }

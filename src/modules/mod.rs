@@ -63,6 +63,46 @@ impl EnemySpawner{
         }
     }
 
+    pub fn spawn_enemies(&mut self, deltatime:f32, game_utils:&Utils) -> Option<Vec<Enemy>>{ // movimento vec
+        if self.current_spawn_rate <= 0.0{
+
+            // vita e velocita' casuale tra i due range min e max
+            let enemy_health = rand::thread_rng().gen_range(self.health_enemies.0..self.health_enemies.1);
+            let enemy_speed = rand::thread_rng().gen_range(self.speed_enemies.0..self.speed_enemies.1);
+
+            let enemies_to_spawn = 2; // numero di nemici da spawnare in contemporanea (per ora fisso)
+            let mut enemies_spawned:Vec<Enemy> = Vec::new(); // vettore nel quale metterli
+            // ognuno spawna con posizione casuale, per ora stessa velocita' e vita
+            for _ in 0..enemies_to_spawn{
+                let mut new_enemy = Enemy::new(format!("enemy_base_{}", self.enemy_id).as_str(), enemy_speed, enemy_health);
+                self.enemy_id += 1; // si incrementa enemy_id
+    
+                // si imposta sprite
+                new_enemy.enemy_entity.set_sprite(51, 43);
+                // si imposta posizione (casualizzarla)
+                let offset_player_x_min = game_utils.get_player_position().x - 100.0;
+                let offset_player_x_max = game_utils.get_player_position().x + 100.0;
+                let offset_player_y_min = game_utils.get_player_position().y - 100.0;
+                let offset_player_y_max = game_utils.get_player_position().y + 100.0;
+                
+                let spawn_position_x = rand::thread_rng().gen_range(offset_player_x_min..offset_player_x_max);
+                let spawn_position_y = rand::thread_rng().gen_range(offset_player_y_min..offset_player_y_max);
+                new_enemy.enemy_entity.set_position(FPoint::new(spawn_position_x, 
+                    spawn_position_y));
+                
+                // spawn rate casuale tra minimo e massimo
+                self.current_spawn_rate = rand::thread_rng().gen_range(self.spawn_rate.0..self.spawn_rate.1);
+
+                enemies_spawned.push(new_enemy); // pusho il nuovo nemico
+            }
+        
+            Some(enemies_spawned)
+        }else{
+            self.current_spawn_rate -= deltatime;
+            None
+        }
+    }
+
     pub fn spawn_enemy(&mut self, deltatime:f32, game_utils:&Utils) -> Option<Enemy>{ // movimento dell'enemy
         if self.current_spawn_rate <= 0.0{
 
@@ -357,6 +397,8 @@ impl Utils{
     }
 
     // funzioni "statiche" quindi senza self, utilizzata per fare operazioni di utilita' generica
+    // possono essere richiamate semplicemente con Utils::point_magnitude()
+    // non avendo self non dipendono dall'istanza utils creata e, non ritornando Self, non ne creano una
     pub fn point_magnitude(vector:FPoint) -> f32{
         (vector.x * vector.x + vector.y * vector.y).sqrt()
     }
